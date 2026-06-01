@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TechWeek — Sistema de Sorteio</title>
+<style>
+:root {
+  --bg:      #04040f;
+  --bg2:     #080820;
+  --panel:   rgba(8, 8, 30, 0.88);
+  --border:  rgba(0, 230, 255, 0.18);
+  --cyan:    #00e6ff;
+  --purple:  #a020f0;
+  --green:   #00ff9d;
+  --orange:  #ff6b35;
+  --gold:    #ffd700;
+  --text:    #ccd8f0;
+  --dim:     #5a6a8a;
+  --font:    'Courier New', 'Lucida Console', monospace;
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* GRID BACKGROUND */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(0,230,255,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,230,255,.04) 1px, transparent 1px);
+  background-size: 44px 44px;
+  pointer-events: none; z-index: 0;
+}
+
+/* scan-line overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 3px,
+    rgba(0,0,0,.06) 3px, rgba(0,0,0,.06) 4px
+  );
+  pointer-events: none; z-index: 0;
+}
+
+#bg-canvas   { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+#conf-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 900; }
+
+/* LAYOUT */
+.app {
+  position: relative; z-index: 1;
+  max-width: 1440px; margin: 0 auto;
+  padding: 18px 24px 40px;
+}
+
+/* HEADER */
+header { text-align: center; padding: 24px 0 18px; }
+
+.logo {
+  font-size: clamp(1.6rem, 3vw, 2.8rem);
+  font-weight: 900;
+  letter-spacing: 6px;
+  background: linear-gradient(120deg, var(--cyan) 0%, var(--purple) 50%, var(--cyan) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer 4s linear infinite;
+  text-transform: uppercase;
+}
+
+@keyframes shimmer { to { background-position: 200% center; } }
+
+.tagline {
+  font-size: .72rem;
+  color: var(--dim);
+  letter-spacing: 6px;
+  margin-top: 4px;
+}
+
+/* STATUS BAR */
+.statusbar {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: center; justify-content: space-between;
+  padding: 7px 16px;
+  background: rgba(0,230,255,.04);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: .68rem;
+  color: var(--dim);
+  letter-spacing: 1.5px;
+  margin: 12px 0 16px;
+}
+
+.status-item { display: flex; align-items: center; gap: 6px; }
+.dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  animation: blink 2.2s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+/* MAIN GRID */
+.grid {
+  display: grid;
+  grid-template-columns: 310px 1fr 300px;
+  gap: 18px;
+  align-items: start;
+}
+
+/* PANEL BASE */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  backdrop-filter: blur(14px);
+}
+
+.panel-title {
+  font-size: .68rem;
+  letter-spacing: 4px;
+  color: var(--cyan);
+  text-transform: uppercase;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.panel-title::before { content:'//'; color: var(--purple); }
+
+/* PARTICIPANTS PANEL */
+.count-badge { text-align: center; padding: 10px 0 14px; }
+.count-badge .num {
+  font-size: 2.4rem;
+  color: var(--cyan);
+  text-shadow: 0 0 18px rgba(0,230,255,.5);
+  line-height: 1; font-weight: 900;
+}
+.count-badge .lbl {
+  font-size: .65rem; letter-spacing: 3px; color: var(--dim);
+  margin-top: 3px; text-transform: uppercase;
+}
+
+textarea {
+  width: 100%; height: 110px;
+  background: rgba(0,230,255,.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: .8rem var(--font);
+  padding: 9px 11px;
+  resize: none; outline: none;
+  margin-bottom: 7px;
+  transition: border .2s, box-shadow .2s;
+}
+textarea:focus, input[type=text]:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 12px rgba(0,230,255,.2);
+}
+textarea::placeholder, input::placeholder { color: var(--dim); }
+
+.row { display: flex; gap: 7px; margin-bottom: 7px; }
+
+input[type=text] {
+  flex: 1;
+  background: rgba(0,230,255,.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: .82rem var(--font);
+  padding: 7px 11px;
+  outline: none;
+  transition: border .2s, box-shadow .2s;
+}
+
+/* BUTTONS */
+.btn {
+  padding: 7px 14px;
+  border: 1px solid;
+  border-radius: 8px;
+  cursor: pointer;
+  font: .75rem var(--font);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  transition: all .2s;
+  white-space: nowrap;
+  background: transparent;
+}
+.btn:active { transform: scale(.96); }
+.btn:disabled { opacity: .4; cursor: not-allowed; pointer-events: none; }
+
+.btn-c { border-color: var(--cyan);   color: var(--cyan); }
+.btn-p { border-color: var(--purple); color: var(--purple); }
+.btn-g { border-color: var(--green);  color: var(--green); }
+.btn-r { border-color: #ff4444;       color: #ff4444; }
+
+.btn-c:hover { background: rgba(0,230,255,.15);  box-shadow: 0 0 14px rgba(0,230,255,.3); }
+.btn-p:hover { background: rgba(160,32,240,.15); box-shadow: 0 0 14px rgba(160,32,240,.3); }
+.btn-g:hover { background: rgba(0,255,157,.15);  box-shadow: 0 0 14px rgba(0,255,157,.3); }
+.btn-r:hover { background: rgba(255,68,68,.15);  box-shadow: 0 0 14px rgba(255,68,68,.3); }
+
+.btn-wide  { width: 100%; margin-bottom: 7px; padding: 9px; }
+.btn-pair  { display: flex; gap: 7px; margin-bottom: 10px; }
+.btn-pair .btn { flex: 1; }
+
+/* names list */
+.search-wrap { margin-bottom: 8px; }
+.search-wrap input { width: 100%; }
+
+.names-list { max-height: 270px; overflow-y: auto; padding-right: 2px; }
+.names-list::-webkit-scrollbar { width: 3px; }
+.names-list::-webkit-scrollbar-thumb { background: var(--cyan); border-radius: 2px; }
+
+.name-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  border-radius: 4px;
+  font-size: .78rem;
+  transition: background .15s;
+}
+.name-row:hover { background: rgba(0,230,255,.06); }
+.name-row .idx { color: var(--dim); font-size: .65rem; min-width: 26px; }
+.name-row .nm  { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name-row .xb  {
+  background: none; border: none; color: rgba(255,68,68,.5);
+  cursor: pointer; font-size: .75rem; padding: 0 3px; line-height: 1;
+  transition: color .2s;
+}
+.name-row .xb:hover { color: #ff4444; }
+
+.empty-msg {
+  text-align: center; color: var(--dim);
+  font-size: .78rem; padding: 22px 0;
+}
+
+/* WHEEL COLUMN */
+.wheel-col {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 16px;
+}
+
+.wheel-frame {
+  position: relative;
+  width: min(500px, 100%);
+  aspect-ratio: 1;
+}
+
+#wheel-canvas { width: 100%; height: 100%; border-radius: 50%; display: block; }
+
+/* spinning ring border */
+.wheel-ring {
+  position: absolute; inset: -6px;
+  border-radius: 50%;
+  background: conic-gradient(var(--cyan), var(--purple), var(--green), var(--cyan));
+  animation: spin-ring 6s linear infinite;
+  z-index: -1; opacity: .7;
+}
+.wheel-ring-mask {
+  position: absolute; inset: 2px;
+  border-radius: 50%;
+  background: var(--bg);
+  z-index: -1;
+}
+@keyframes spin-ring { to { transform: rotate(360deg); } }
+
+/* pointer */
+.ptr {
+  position: absolute;
+  top: -18px; left: 50%;
+  transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 14px solid transparent;
+  border-right: 14px solid transparent;
+  border-top: 38px solid var(--cyan);
+  filter: drop-shadow(0 0 8px var(--cyan));
+  z-index: 10;
+}
+
+/* center hub */
+.hub {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  width: 54px; height: 54px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #161640, #04040f);
+  border: 3px solid var(--cyan);
+  box-shadow: 0 0 18px var(--cyan), inset 0 0 14px rgba(0,230,255,.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem; z-index: 10;
+}
+
+/* SPIN BUTTON */
+.spin-btn-wrap { position: relative; width: 100%; max-width: 320px; }
+.spin-btn-wrap::before {
+  content: '';
+  position: absolute; inset: -2px;
+  border-radius: 50px;
+  background: linear-gradient(90deg, var(--cyan), var(--purple), var(--green), var(--cyan));
+  background-size: 300% auto;
+  animation: shimmer 3s linear infinite;
+  z-index: 0; opacity: .8;
+}
+#spin-btn {
+  position: relative; z-index: 1;
+  width: 100%; padding: 15px 0;
+  font: 900 1.05rem var(--font);
+  letter-spacing: 5px; text-transform: uppercase;
+  background: var(--bg2);
+  border: none; border-radius: 50px;
+  color: #fff; cursor: pointer;
+  transition: all .25s;
+}
+#spin-btn:hover:not(:disabled) {
+  background: rgba(0,230,255,.12);
+  transform: scale(1.03);
+  box-shadow: 0 0 28px rgba(0,230,255,.35);
+}
+#spin-btn:disabled { opacity: .45; cursor: not-allowed; }
+#spin-btn.spinning { animation: pulse-btn .4s ease-in-out infinite alternate; }
+@keyframes pulse-btn { from{opacity:.7} to{opacity:1} }
+
+/* toggle */
+.toggle-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: .78rem; color: var(--dim);
+}
+.toggle { position: relative; width: 40px; height: 20px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.tslider {
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,.08);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: .3s;
+}
+.tslider::before {
+  content: ''; position: absolute;
+  width: 14px; height: 14px; bottom: 2px; left: 2px;
+  background: var(--dim); border-radius: 50%;
+  transition: .3s;
+}
+.toggle input:checked ~ .tslider { background: rgba(0,255,157,.15); border-color: var(--green); }
+.toggle input:checked ~ .tslider::before { transform: translateX(20px); background: var(--green); }
+
+/* WINNERS PANEL */
+.winner-box {
+  padding: 14px;
+  background: rgba(0,255,157,.04);
+  border: 1px solid rgba(0,255,157,.2);
+  border-radius: 10px;
+  text-align: center;
+  margin-bottom: 14px;
+  min-height: 82px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+.winner-lbl {
+  font-size: .62rem; letter-spacing: 4px;
+  color: var(--dim); text-transform: uppercase; margin-bottom: 6px;
+}
+.winner-name {
+  font-size: 1.15rem; font-weight: 700;
+  color: var(--green);
+  text-shadow: 0 0 14px var(--green);
+  word-break: break-word;
+}
+
+.wlist { max-height: 360px; overflow-y: auto; }
+.wlist::-webkit-scrollbar { width: 3px; }
+.wlist::-webkit-scrollbar-thumb { background: var(--green); border-radius: 2px; }
+
+.w-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 8px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: .83rem;
+  transition: background .15s;
+  border-radius: 4px;
+}
+.w-row:hover { background: rgba(0,255,157,.05); }
+.w-num {
+  width: 22px; height: 22px; flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(0,255,157,.12);
+  border: 1px solid var(--green);
+  display: flex; align-items: center; justify-content: center;
+  font-size: .62rem; color: var(--green);
+}
+.w-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* MODAL — AUDITORIUM VERSION */
+#modal {
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center,
+    rgba(0,18,10,.97) 0%, rgba(0,0,14,.99) 55%, rgba(0,0,0,1) 100%);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+  opacity: 0; pointer-events: none;
+  transition: opacity .4s;
+}
+#modal.show { opacity: 1; pointer-events: all; }
+
+/* animated spotlight behind modal */
+#modal::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 55% 50% at 50% 52%,
+    rgba(0,255,157,.14) 0%, transparent 70%);
+  animation: spotlight 3s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes spotlight {
+  from { opacity:.5; transform:scale(1); }
+  to   { opacity:1;  transform:scale(1.15); }
+}
+
+.modal-box {
+  position: relative; z-index: 1;
+  background: linear-gradient(160deg, #060620 0%, #0c0328 100%);
+  border: 3px solid var(--green);
+  border-radius: 28px;
+  padding: 50px 64px 52px;
+  text-align: center;
+  width: min(92vw, 1060px);
+  box-shadow:
+    0 0 80px  rgba(0,255,157,.55),
+    0 0 180px rgba(0,255,157,.28),
+    0 0 340px rgba(0,255,157,.1),
+    inset 0 0 90px rgba(0,255,157,.04);
+  transform: scale(.72) translateY(48px);
+  transition: transform .48s cubic-bezier(.175,.885,.32,1.275);
+}
+#modal.show .modal-box { transform: scale(1) translateY(0); }
+
+/* draw number badge */
+.modal-badge {
+  display: inline-block;
+  padding: 6px 22px;
+  border: 1px solid rgba(0,230,255,.4);
+  border-radius: 30px;
+  font-size: clamp(.72rem, 1.1vw, .88rem);
+  color: var(--cyan);
+  letter-spacing: 5px;
+  text-transform: uppercase;
+  background: rgba(0,230,255,.07);
+  margin-bottom: 18px;
+}
+
+.modal-icon {
+  font-size: clamp(4rem, 7vw, 6.5rem);
+  display: block;
+  margin-bottom: 6px;
+  animation: trophy 1s ease-in-out infinite alternate;
+}
+@keyframes trophy {
+  from { transform:scale(1) rotate(-3deg); filter:drop-shadow(0 0 20px var(--gold)); }
+  to   { transform:scale(1.14) rotate(3deg); filter:drop-shadow(0 0 44px var(--gold)); }
+}
+
+.modal-tag {
+  font-size: clamp(.78rem, 1.4vw, 1rem);
+  letter-spacing: 6px;
+  color: rgba(255,255,255,.5);
+  text-transform: uppercase;
+  margin: 16px 0 20px;
+}
+
+/* separator */
+.modal-sep {
+  width: 160px; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  margin: 0 auto 24px;
+  box-shadow: 0 0 12px var(--green);
+}
+
+.modal-winner {
+  font-size: clamp(2.8rem, 6.5vw, 8.5rem);
+  font-weight: 900;
+  color: var(--green);
+  line-height: 1.1;
+  word-break: break-word;
+  margin: 0 0 22px;
+  animation: name-glow 1.8s ease-in-out infinite alternate;
+}
+@keyframes name-glow {
+  from {
+    text-shadow:
+      0 0 30px var(--green),
+      0 0 70px rgba(0,255,157,.55),
+      0 0 120px rgba(0,255,157,.3);
+  }
+  to {
+    text-shadow:
+      0 0 55px var(--green),
+      0 0 120px rgba(0,255,157,.75),
+      0 0 220px rgba(0,255,157,.5),
+      0 0 340px rgba(0,255,157,.2);
+  }
+}
+
+.modal-draw {
+  font-size: clamp(.72rem, 1.1vw, .9rem);
+  color: rgba(255,255,255,.38);
+  letter-spacing: 3px;
+  margin-bottom: 40px;
+}
+
+.modal-continue {
+  padding: 18px 72px;
+  font: 900 clamp(.88rem, 1.4vw, 1.1rem) var(--font);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  background: rgba(0,255,157,.09);
+  border: 2px solid var(--green);
+  border-radius: 60px;
+  color: var(--green);
+  cursor: pointer;
+  transition: all .25s;
+}
+.modal-continue:hover {
+  background: rgba(0,255,157,.2);
+  box-shadow: 0 0 32px rgba(0,255,157,.5);
+  transform: scale(1.05);
+}
+.modal-continue:active { transform: scale(.97); }
+
+/* RESPONSIVE */
+@media (max-width: 1100px) {
+  .grid { grid-template-columns: 270px 1fr 270px; }
+}
+@media (max-width: 860px) {
+  .grid { grid-template-columns: 1fr; }
+  .wheel-frame { max-width: 380px; }
+}
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<canvas id="conf-canvas"></canvas>
+
+<div class="app">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">⚡ TechWeek ⚡</div>
+    <div class="tagline">// INTELLIGENT RAFFLE SYSTEM v3.0 — AI &amp; TECH EDITION //</div>
+  </header>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <div class="status-item"><span class="dot"></span> SISTEMA ONLINE</div>
+    <div class="status-item" id="sb-part">PARTICIPANTES: 0</div>
+    <div class="status-item" id="sb-sort">SORTEADOS: 0</div>
+    <div class="status-item" id="sb-left">RESTANTES: 0</div>
+    <div class="status-item">2025 © TechWeek</div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="grid">
+
+    <!-- PARTICIPANTS PANEL -->
+    <div class="panel">
+      <div class="panel-title">PARTICIPANTES</div>
+
+      <div class="count-badge">
+        <div class="num" id="count-num">0</div>
+        <div class="lbl">nomes cadastrados</div>
+      </div>
+
+      <textarea id="bulk-ta"
+        placeholder="Cole aqui a lista completa (um nome por linha):&#10;&#10;João Silva&#10;Maria Santos&#10;Pedro Oliveira&#10;..."></textarea>
+
+      <button class="btn btn-c btn-wide" onclick="importBulk()">
+        ⟦ IMPORTAR LISTA ⟧
+      </button>
+
+      <div class="row">
+        <input type="text" id="single-inp" placeholder="Adicionar um nome..."
+          onkeydown="if(event.key==='Enter')addOne()">
+        <button class="btn btn-p" onclick="addOne()">ADD</button>
+      </div>
+
+      <div class="search-wrap">
+        <input type="text" id="search-inp" placeholder="🔍  Pesquisar participante..."
+          oninput="renderList()">
+      </div>
+
+      <div class="btn-pair">
+        <button class="btn btn-r" onclick="clearPart()">✕ LIMPAR</button>
+        <button class="btn btn-g" onclick="exportPart()">↓ EXPORT</button>
+      </div>
+
+      <div class="names-list" id="names-list">
+        <div class="empty-msg">Nenhum participante adicionado</div>
+      </div>
+    </div>
+
+    <!-- WHEEL COLUMN -->
+    <div class="panel wheel-col">
+
+      <div class="wheel-frame" id="wheel-frame">
+        <div class="wheel-ring"></div>
+        <div class="wheel-ring-mask"></div>
+        <div class="ptr"></div>
+        <canvas id="wheel-canvas"></canvas>
+        <div class="hub">⚡</div>
+      </div>
+
+      <div class="spin-btn-wrap">
+        <button id="spin-btn" disabled onclick="spinWheel()">GIRAR</button>
+      </div>
+
+      <div class="toggle-row">
+        <label class="toggle">
+          <input type="checkbox" id="rm-toggle" checked>
+          <span class="tslider"></span>
+        </label>
+        <span>Remover vencedor da roleta</span>
+      </div>
+
+    </div>
+
+    <!-- WINNERS PANEL -->
+    <div class="panel">
+      <div class="panel-title">VENCEDORES</div>
+
+      <div class="winner-box">
+        <div class="winner-lbl">ÚLTIMO SORTEADO</div>
+        <div class="winner-name" id="last-win">—</div>
+      </div>
+
+      <div class="btn-pair">
+        <button class="btn btn-r" onclick="clearWins()">✕ LIMPAR</button>
+        <button class="btn btn-g" onclick="exportWins()">↓ EXPORT</button>
+      </div>
+
+      <div class="wlist" id="winners-list">
+        <div class="empty-msg">Nenhum sorteado ainda</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- WINNER MODAL -->
+<div id="modal">
+  <div class="modal-box">
+    <div class="modal-badge" id="modal-draw-num">SORTEIO #1</div>
+    <span class="modal-icon">🏆</span>
+    <div class="modal-tag">PARABÉNS! TEMOS UM VENCEDOR!</div>
+    <div class="modal-sep"></div>
+    <div class="modal-winner" id="modal-name"></div>
+    <div class="modal-draw" id="modal-draw"></div>
+    <button class="modal-continue" onclick="closeModal()">✓ CONTINUAR SORTEIO</button>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   STATE
+   ============================================================ */
+let names   = [];
+let winners = [];
+
+/* ============================================================
+   BACKGROUND PARTICLES
+   ============================================================ */
+const bgC = document.getElementById('bg-canvas');
+const bgX = bgC.getContext('2d');
+let pts   = [];
+
+function resizeBg() { bgC.width = innerWidth; bgC.height = innerHeight; }
+resizeBg();
+addEventListener('resize', () => { resizeBg(); drawWheel(curRot); });
+
+const PCOLS = ['#00e6ff','#a020f0','#00ff9d','#ffffff','#ff6b35'];
+
+function mkPt() {
+  return {
+    x: Math.random() * bgC.width,
+    y: Math.random() * bgC.height,
+    r: Math.random() * 1.6 + .3,
+    vx: (Math.random() - .5) * .25,
+    vy: (Math.random() - .5) * .25,
+    a: Math.random() * .35 + .05,
+    tw: Math.random() * Math.PI * 2,
+    c: PCOLS[Math.floor(Math.random() * PCOLS.length)]
+  };
+}
+for (let i = 0; i < 90; i++) pts.push(mkPt());
+
+(function animBg() {
+  bgX.clearRect(0, 0, bgC.width, bgC.height);
+  pts.forEach((p, i) => {
+    p.x += p.vx; p.y += p.vy; p.tw += .015;
+    if (p.x < 0 || p.x > bgC.width || p.y < 0 || p.y > bgC.height) {
+      pts[i] = mkPt(); return;
+    }
+    bgX.globalAlpha = p.a * (.65 + .35 * Math.sin(p.tw));
+    bgX.fillStyle   = p.c;
+    bgX.beginPath();
+    bgX.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    bgX.fill();
+  });
+  bgX.globalAlpha = 1;
+  requestAnimationFrame(animBg);
+})();
+
+/* ============================================================
+   CONFETTI
+   ============================================================ */
+const cfC = document.getElementById('conf-canvas');
+const cfX = cfC.getContext('2d');
+let cfPcs = [], cfOn = false;
+
+function launchConfetti() {
+  cfC.width = innerWidth; cfC.height = innerHeight;
+  cfPcs = []; cfOn = true;
+  const cols = ['#00e6ff','#a020f0','#00ff9d','#ff6b35','#ffd700','#ff69b4','#fff'];
+  for (let i = 0; i < 200; i++) {
+    cfPcs.push({
+      x: Math.random() * cfC.width,
+      y: -10 - Math.random() * 200,
+      w: Math.random() * 11 + 5, h: Math.random() * 6 + 3,
+      c: cols[Math.floor(Math.random() * cols.length)],
+      vy: Math.random() * 3 + 1.5, vx: (Math.random() - .5) * 1.8,
+      rot: Math.random() * 360, rs: (Math.random() - .5) * 6, a: 1
+    });
+  }
+  (function animCf() {
+    if (!cfOn) return;
+    cfX.clearRect(0, 0, cfC.width, cfC.height);
+    let alive = false;
+    cfPcs.forEach(p => {
+      p.y += p.vy; p.x += p.vx; p.rot += p.rs;
+      if (p.y > cfC.height * .75) p.a -= .008;
+      if (p.a > 0) alive = true;
+      cfX.save();
+      cfX.globalAlpha = Math.max(0, p.a);
+      cfX.translate(p.x, p.y);
+      cfX.rotate(p.rot * Math.PI / 180);
+      cfX.fillStyle = p.c;
+      cfX.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      cfX.restore();
+    });
+    if (alive) requestAnimationFrame(animCf);
+    else { cfOn = false; cfX.clearRect(0, 0, cfC.width, cfC.height); }
+  })();
+}
+
+/* ============================================================
+   WHEEL DRAWING
+   ============================================================ */
+const wCvs = document.getElementById('wheel-canvas');
+const wCtx = wCvs.getContext('2d');
+
+const SEG_COLORS = [
+  ['#00e6ff','#006080'],['#a020f0','#500080'],['#00ff9d','#007040'],
+  ['#ff6b35','#802010'],['#ffd700','#806800'],['#ff69b4','#802060'],
+  ['#7b68ee','#3838a0'],['#00bfff','#005888'],['#adff2f','#567018'],
+  ['#ff4500','#801800'],['#da70d6','#682068'],['#40e0d0','#187070'],
+];
+
+function sizeWheel() {
+  const f = document.getElementById('wheel-frame');
+  const s = f.clientWidth;
+  wCvs.width  = s;
+  wCvs.height = s;
+}
+
+function drawWheel(rot) {
+  sizeWheel();
+  const sz = wCvs.width;
+  const cx = sz / 2, cy = sz / 2;
+  const R  = sz / 2 - 4;
+
+  wCtx.clearRect(0, 0, sz, sz);
+
+  if (names.length === 0) {
+    wCtx.beginPath();
+    wCtx.arc(cx, cy, R, 0, Math.PI * 2);
+    const eg = wCtx.createRadialGradient(cx, cy, 0, cx, cy, R);
+    eg.addColorStop(0, '#0d0d28');
+    eg.addColorStop(1, '#04040f');
+    wCtx.fillStyle = eg;
+    wCtx.fill();
+    wCtx.strokeStyle = 'rgba(0,230,255,.25)';
+    wCtx.lineWidth = 2;
+    wCtx.stroke();
+    wCtx.fillStyle = 'rgba(0,230,255,.3)';
+    wCtx.font = `bold ${Math.max(10, sz * .036)}px Courier New`;
+    wCtx.textAlign = 'center';
+    wCtx.textBaseline = 'middle';
+    wCtx.fillText('ADICIONE PARTICIPANTES', cx, cy - sz * .04);
+    wCtx.fillText('PARA INICIAR O SORTEIO', cx, cy + sz * .04);
+    return;
+  }
+
+  const n   = names.length;
+  const seg = (Math.PI * 2) / n;
+
+  for (let i = 0; i < n; i++) {
+    const a0 = rot + i * seg;
+    const a1 = a0 + seg;
+    const [c1, c2] = SEG_COLORS[i % SEG_COLORS.length];
+
+    wCtx.beginPath();
+    wCtx.moveTo(cx, cy);
+    wCtx.arc(cx, cy, R, a0, a1);
+    wCtx.closePath();
+
+    const gr = wCtx.createRadialGradient(cx, cy, R * .1, cx, cy, R);
+    gr.addColorStop(0, c2 + '99');
+    gr.addColorStop(1, c1 + 'cc');
+    wCtx.fillStyle = gr;
+    wCtx.fill();
+
+    wCtx.strokeStyle = 'rgba(0,0,10,.6)';
+    wCtx.lineWidth   = n > 50 ? .5 : 1;
+    wCtx.stroke();
+
+    if (n <= 120) {
+      const mid  = a0 + seg / 2;
+      const tR   = R * (n <= 15 ? .62 : n <= 30 ? .68 : n <= 60 ? .74 : .78);
+      const tx   = cx + tR * Math.cos(mid);
+      const ty   = cy + tR * Math.sin(mid);
+      const fs   = n <= 8 ? 18 : n <= 15 ? 15 : n <= 30 ? 12 : n <= 60 ? 10 : 8;
+      const maxL = n <= 8 ? 22 : n <= 15 ? 16 : n <= 30 ? 12 : n <= 60 ? 9 : 7;
+
+      wCtx.save();
+      wCtx.translate(tx, ty);
+      wCtx.rotate(mid + Math.PI / 2);
+      wCtx.font         = `bold ${fs}px Courier New`;
+      wCtx.textAlign    = 'center';
+      wCtx.textBaseline = 'middle';
+      wCtx.shadowColor  = 'rgba(0,0,0,.9)';
+      wCtx.shadowBlur   = 4;
+      wCtx.fillStyle    = '#fff';
+      let nm = names[i];
+      if (nm.length > maxL) nm = nm.slice(0, maxL - 1) + '…';
+      wCtx.fillText(nm, 0, 0);
+      wCtx.restore();
+    }
+  }
+
+  wCtx.beginPath();
+  wCtx.arc(cx, cy, R, 0, Math.PI * 2);
+  wCtx.strokeStyle = 'rgba(0,230,255,.55)';
+  wCtx.lineWidth   = 3;
+  wCtx.stroke();
+}
+
+drawWheel(0);
+
+/* ============================================================
+   SPIN ANIMATION
+   ============================================================ */
+let curRot   = 0;
+let spinning = false;
+
+function spinWheel() {
+  if (spinning || names.length < 1) return;
+  spinning = true;
+
+  const btn = document.getElementById('spin-btn');
+  btn.disabled = true;
+  btn.classList.add('spinning');
+  btn.textContent = 'GIRANDO...';
+
+  const winIdx = Math.floor(Math.random() * names.length);
+  const n      = names.length;
+  const seg    = (Math.PI * 2) / n;
+  const segMid = winIdx * seg + seg / 2;
+
+  const baseTarget = -Math.PI / 2 - segMid;
+
+  /* velocidade e duração fixas escalonadas pelo nº de participantes —
+     sem aleatoriedade: comportamento idêntico em todo giro */
+  const cnt      = names.length;
+  const spins    = cnt <= 30 ? 6 : cnt <= 100 ? 8 : cnt <= 200 ? 10 : 12;
+  const duration = cnt <= 30 ? 5000 : cnt <= 100 ? 5500 : cnt <= 200 ? 6000 : 6500;
+
+  const extraSpins = spins * Math.PI * 2;
+  let target = baseTarget + extraSpins;
+  while (target <= curRot) target += Math.PI * 2;
+
+  const start = curRot;
+  const t0    = performance.now();
+
+  const ease = t => 1 - Math.pow(1 - t, 4);
+
+  (function frame(now) {
+    const t = Math.min((now - t0) / duration, 1);
+    curRot  = start + (target - start) * ease(t);
+    drawWheel(curRot);
+    if (t < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      curRot   = target % (Math.PI * 2);  // normaliza para [0, 2π) — evita acúmulo entre giros
+      spinning = false;
+      announceWinner(winIdx);
+    }
+  })(t0);
+}
+
+/* ============================================================
+   WINNER
+   ============================================================ */
+function announceWinner(idx) {
+  const name = names[idx];
+  winners.push(name);
+
+  document.getElementById('last-win').textContent = name;
+
+  const total = names.length + winners.length;
+  document.getElementById('modal-name').textContent     = name;
+  document.getElementById('modal-draw-num').textContent = 'SORTEIO #' + winners.length;
+  document.getElementById('modal-draw').textContent     =
+    winners.length + ' DE ' + total + ' SORTEADOS  ·  ' + new Date().toLocaleTimeString('pt-BR');
+  document.getElementById('modal').classList.add('show');
+
+  if (document.getElementById('rm-toggle').checked) {
+    names.splice(idx, 1);
+    renderList();
+    updateCount();
+    drawWheel(curRot);
+  }
+
+  renderWinners();
+  updateStatus();
+  launchConfetti();
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+  const btn = document.getElementById('spin-btn');
+  btn.textContent = 'GIRAR';
+  btn.disabled    = names.length < 1;
+  drawWheel(curRot);
+}
+
+/* ============================================================
+   PARTICIPANTS MANAGEMENT
+   ============================================================ */
+function addOne() {
+  const inp = document.getElementById('single-inp');
+  const v   = inp.value.trim();
+  if (!v) return;
+  names.push(v);
+  inp.value = '';
+  afterChange();
+}
+
+function importBulk() {
+  const ta = document.getElementById('bulk-ta');
+  const ls = ta.value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (!ls.length) return;
+  names.push(...ls);
+  ta.value = '';
+  afterChange();
+}
+
+function removeName(i) {
+  names.splice(i, 1);
+  afterChange();
+}
+
+function clearPart() {
+  if (!names.length) return;
+  if (!confirm('Remover todos os ' + names.length + ' participantes?')) return;
+  names = [];
+  afterChange();
+}
+
+function exportPart() {
+  if (!names.length) return;
+  dl('participantes.txt', names.join('\n'));
+}
+
+function afterChange() {
+  renderList();
+  updateCount();
+  drawWheel(curRot);
+  updateStatus();
+  document.getElementById('spin-btn').disabled = names.length < 1;
+}
+
+function renderList() {
+  const q   = document.getElementById('search-inp').value.toLowerCase();
+  const box = document.getElementById('names-list');
+  const vis = names.map((nm, i) => ({ nm, i })).filter(({ nm }) => nm.toLowerCase().includes(q));
+
+  if (!vis.length) {
+    box.innerHTML = '<div class="empty-msg">' +
+      (names.length ? 'Nenhum resultado para a busca' : 'Nenhum participante adicionado') +
+      '</div>';
+    return;
+  }
+  box.innerHTML = vis.map(({ nm, i }) =>
+    '<div class="name-row">' +
+    '<span class="idx">' + String(i + 1).padStart(3, '0') + '</span>' +
+    '<span class="nm" title="' + esc(nm) + '">' + esc(nm) + '</span>' +
+    '<button class="xb" onclick="removeName(' + i + ')" title="Remover">✕</button>' +
+    '</div>'
+  ).join('');
+}
+
+function updateCount() {
+  document.getElementById('count-num').textContent = names.length;
+}
+
+/* ============================================================
+   WINNERS MANAGEMENT
+   ============================================================ */
+function renderWinners() {
+  const box = document.getElementById('winners-list');
+  if (!winners.length) {
+    box.innerHTML = '<div class="empty-msg">Nenhum sorteado ainda</div>';
+    return;
+  }
+  box.innerHTML = winners.slice().reverse().map((nm, ri) => {
+    const n = winners.length - ri;
+    return '<div class="w-row">' +
+      '<div class="w-num">' + n + '</div>' +
+      '<span class="w-name" title="' + esc(nm) + '">' + esc(nm) + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function clearWins() {
+  if (!winners.length) return;
+  if (!confirm('Limpar histórico de vencedores?')) return;
+  winners = [];
+  document.getElementById('last-win').textContent = '—';
+  renderWinners();
+  updateStatus();
+}
+
+function exportWins() {
+  if (!winners.length) return;
+  dl('vencedores.txt', winners.map((n, i) => (i + 1) + '. ' + n).join('\n'));
+}
+
+/* ============================================================
+   STATUS + UTILS
+   ============================================================ */
+function updateStatus() {
+  const total = names.length + winners.length;
+  document.getElementById('sb-part').textContent = 'PARTICIPANTES: ' + total;
+  document.getElementById('sb-sort').textContent = 'SORTEADOS: '     + winners.length;
+  document.getElementById('sb-left').textContent = 'RESTANTES: '     + names.length;
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function dl(fn, txt) {
+  const a  = document.createElement('a');
+  a.href   = URL.createObjectURL(new Blob([txt], { type: 'text/plain' }));
+  a.download = fn;
+  a.click();
+}
+
+/* init */
+renderList();
+renderWinners();
+updateStatus();
+</script>
+</body>
+</html>
